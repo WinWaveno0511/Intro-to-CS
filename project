@@ -3,88 +3,78 @@ import numpy as np
 from tensorflow.keras.models import load_model
 import pandas as pd
 from datetime import datetime
+import time
+late_cutoff_time = datetime.now().replace(hour=9,minute=0,second=0,microsecond=0)
 
-class_labels = ['Khoi Vi', 'Phu Huy ', 'Xuan Phu']
+class AttendanceSystem:
+    def __init__(self):
+        self.class_labels = ['Khoi Vi', 'Xuan Phu', 'Phu Huy', 'nobody']
+        self.model = load_model('keras_model.h5')
+        self.cap = cv2.VideoCapture(0)
+        self.attendance_df = pd.DataFrame(columns=['StudentID', 'Name', 'Major', 'Timestamp'])
 
-# Load the pre-trained model
-model = load_model('keras_model.h5')
+    def preprocess_frame(self, image):
+        frame = cv2.resize(image, (224, 224), interpolation=cv2.INTER_AREA)
+        frame = np.asarray(frame, dtype=np.float32).reshape(1, 224, 224, 3)
+        frame = (frame / 127.5) - 1
+        return frame
 
-# Initialize the webcam
-cap = cv2.VideoCapture(0)
-def classify_and_save():
-    # Create a DataFrame to store attendance information
-    attendance_df = pd.DataFrame(columns=['StudentID', 'Name', 'Major', 'Timestamp'])
-    while True:
-        # Capture a frame from the webcam
-        ret, frame = cap.read()
+    def process_prediction(self, prediction):
+        predicted_class_index = np.argmax(prediction)
+        predicted_class_label = self.class_labels[predicted_class_index]
+        confidence_score = prediction[0][predicted_class_index]
+        return predicted_class_label, confidence_score
 
-        # Preprocess the frame (adjust as per your model requirements)
-        resized_frame = preprocess_frame(frame)
-
-        # Perform model inference
-        # Replace this with your actual inference logic based on your model
-        # prediction = model.predict(preprocessed_frame)
-
-        prediction = model.predict(resized_frame)
-        # print(prediction)
-
-        # Process the prediction (replace this with your logic)
-        predicted_class_label = process_prediction(prediction)
-        print('Predicted class:' + predicted_class_label)
-
-        # predicted_class_label = 'Xuan Phu'
-
-        # Get student information based on student_id
-        student_info = get_student_info(predicted_class_label)
-
-        print(student_info)
-        new_rows = {
-            'StudentID': student_info['StudentID'],
-            'Name': student_info['Name'],
-            'Major': student_info['Major'],
-            'Timestamp': datetime.now()
+    def get_student_info(self, predicted_class_label):
+        df = pd.read_csv('student_info.csv', header=0)
+        filtered_df  = df[df['Name'] == predicted_class_label]
+        student_info = {
+            'StudentID': filtered_df ['StudentID'], 
+            'Name': filtered_df ['Name'], 
+            'Major': filtered_df ['Major']
         }
+        return student_info
 
-        attendance_df = pd.concat([attendance_df, pd.DataFrame(new_rows)], ignore_index=True)
+    def classify_and_save(self):
 
-        # Save the attendance DataFrame to an Excel file
-        attendance_df.to_csv('attendance_log.csv', index=False)       
+        while True:
+            ret, frame = self.cap.read()
+            resized_frame = self.preprocess_frame(frame)
+            prediction = self.model.predict(resized_frame)
+            predicted_class_label, confidence_score = self.process_prediction(prediction)
+            print("Class:", predicted_class_label, end="\n")
+            print("Confidence Score:", str(np.round(confidence_score * 100))[:-2], "%")
+            student_info = self.get_student_info(predicted_class_label)
+            # Check if the student is late
+            is_late = datetime.now() > late_cutoff_time
+            new_rows = {
+                'StudentID': student_info['StudentID'],
+                'Name': student_info['Name'],
+                'Major': student_info['Major'],
+                'Timestamp': datetime.now(),
+                'Is_Late': is_late
+            }
 
-        # Display the captured frame (optional)
-        cv2.imshow('Attendance Capture', frame)
+            
+            self.attendance_df = pd.concat([self.attendance_df, pd.DataFrame(new_rows)], ignore_index=True)
+            print(self.attendance_df)
+            self.attendance_df.to_csv('attendance_log.csv', index=False)       
+            cv2.imshow('Attendance Capture', frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+        self.cap.release()
+        cv2.destroyAllWindows()
 
-        # Check for key press to exit the loop (press 'q')
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+    def deduplicate_attendance(self, path):
+        df = pd.read_csv(path)
+        df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+        min_timestamp_index = df.groupby('StudentID')['Timestamp'].idxmin()
+        result_df = df.loc[min_timestamp_index]
+        result_df.to_csv('attendance_log.csv', index=False)   
 
-    # Release the webcam and close OpenCV windows
-    cap.release()
-    cv2.destroyAllWindows()
 
-def preprocess_frame(frame):
-    # Preprocess input image before applying model prediction
-    resized_frame = cv2.resize(frame, (224, 224))
-    resized_frame = np.expand_dims(resized_frame, axis=0)
-    return resized_frame
+attendance_system = AttendanceSystem()
+attendance_system.classify_and_save()
+attendance_system.deduplicate_attendance('attendance_log.csv')
 
-def process_prediction(prediction):
-    # Placeholder function to process the model prediction
-    # Extract the class label or relevant information from the prediction
-    # Return the processed information
-    predicted_class_index = np.argmax(prediction)
-    predicted_class_label = class_labels[predicted_class_index]
-    return predicted_class_label
 
-def get_student_info(predicted_class_label):
-    # Get student info from csv file including major, student name
-    df = pd.read_csv('student_info.csv', header=0)
-    print(predicted_class_label)
-    filtered_df  = df[df['Name'] == predicted_class_label]
-    student_info = {
-        'StudentID': filtered_df ['StudentID'], 
-        'Name': filtered_df ['Name'], 
-        'Major': filtered_df ['Major']
-    }
-    return student_info
-
-classify_and_save()
