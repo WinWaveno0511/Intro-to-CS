@@ -1,6 +1,6 @@
 # Intro-to-CS
 Here are the tasks that the members of our group are responsible for : 
-Ta Le Khoi Vi : Analyse and Implement the source code, writing project report, presentation,testing
+Ta Le Khoi Vi : Analyse and Implement the source code, writing project report, presentation,testing\\
 Le Phu Hung :  Implementing the source code.
 Nguyen Phu Huy : Creating the visual of the presentation, implementing the source code,testing
 Nguyen Quang Huy : Creating the visual of the presentation, analyze and implement the source code.
